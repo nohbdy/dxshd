@@ -306,50 +306,79 @@ class InstructionToken:
 	def mnemonic(self):
 		return D3DSIO[self.op]['op']
 
+RegisterMnemonicLookupVS = {
+	D3DSPR_CONST : 'c',
+	D3DSPR_TEMP : 'r',
+	D3DSPR_INPUT : 'v',
+	D3DSPR_ADDR : 'a',
+	D3DSPR_RASTOUT : 'rast',
+	D3DSPR_ATTROUT : 'attr',
+	D3DSPR_OUTPUT : 'o',
+	D3DSPR_CONSTINT : 'i',
+	D3DSPR_COLOROUT : 'oC',
+	D3DSPR_DEPTHOUT : 'oDepth',
+	D3DSPR_SAMPLER : 's',
+	D3DSPR_CONST2 : 'c',
+	D3DSPR_CONST3 : 'c',
+	D3DSPR_CONST4 : 'c',
+	D3DSPR_CONSTBOOL : 'b',
+	D3DSPR_LOOP : 'aL',
+	D3DSPR_PREDICATE : 'p'
+}
+RegisterMnemonicLookupPS = {
+	D3DSPR_CONST : 'c',
+	D3DSPR_TEMP : 'r',
+	D3DSPR_INPUT : 'v',
+	D3DSPR_TEXTURE : 't',
+	D3DSPR_RASTOUT : 'rast',
+	D3DSPR_ATTROUT : 'attr',
+	D3DSPR_OUTPUT : 'o',
+	D3DSPR_CONSTINT : 'i',
+	D3DSPR_COLOROUT : 'oC',
+	D3DSPR_DEPTHOUT : 'oDepth',
+	D3DSPR_SAMPLER : 's',
+	D3DSPR_CONST2 : 'c',
+	D3DSPR_CONST3 : 'c',
+	D3DSPR_CONST4 : 'c',
+	D3DSPR_CONSTBOOL : 'b',
+	D3DSPR_LOOP : 'aL',
+	D3DSPR_PREDICATE : 'p',
+	D3DSPR_MISCTYPE : 'm'
+}
 class ParameterToken:
 	def swizzle_text():
 		return ''
 	def debug_print():
 		print 'You should override debug_print for anything that inherits from ParameterToken'
 	def to_string(self):
-		if self.register_type == D3DSPR_TEMP:
-			return "r%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_INPUT:
-			return "v%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_CONST:
-			return "c%d%s" % (self.register, self.swizzle_text())
+		reg_str = 'unk'
 		if gCurrentShaderType == SHADERTYPE_VERTEX:
-			if self.register_type == D3DSPR_ADDR:
-				return "a%d%s" % (self.register, self.swizzle_text())
+			reg_str = RegisterMnemonicLookupVS[self.register_type]
 		else:
-			if self.register_type == D3DSPR_TEXTURE:
-				return "t%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_RASTOUT:
-			return "rast%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_ATTROUT:
-			return "attr%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_OUTPUT:
-			return "o%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_CONSTINT:
-			return "i%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_COLOROUT:
-			return "oC%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_DEPTHOUT:
-			return "oDepth%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_SAMPLER:
-			return "s%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_CONST2:
-			return "c%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_CONST3:
-			return "c%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_CONST4:
-			return "c%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_CONSTBOOL:
-			return "b%d%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_LOOP:
-			return "aL%s" % (self.register, self.swizzle_text())
-		if self.register_type == D3DSPR_PREDICATE:
-			return "p0%s" % (self.register, self.swizzle_text())
+			reg_str = RegisterMnemonicLookupPS[self.register_type]
+
+		if self.is_relative:
+			if self.relative_param is None:
+				return "!ERR!"
+			out = reg_str
+			if self.register > 0:
+				out += "%d" % self.register
+			out += "["
+			if self.relative_param.register_type == D3DSPR_LOOP:
+				out += "aL%s" % (self.relative_param.swizzle_text())
+			elif self.relative_param.register_type == D3DSPR_ADDR:
+				out += "a%d%s" % (self.relative_param.register, self.relative_param.swizzle_text())
+			else:
+				raise TokenStreamError("Invalid relative addressing parameter found")
+			out += "]"
+			return out
+		else:
+			if self.register_type == D3DSPR_LOOP:
+				return "aL%s" % (self.register, self.swizzle_text())
+			elif self.register_type == D3DSPR_DEPTHOUT:
+				return "oDepth%s" % (self.register, self.swizzle_text())
+			else:
+				return "%s%d%s" % (reg_str, self.register, self.swizzle_text())
 		self.debug_print()
 		return "unk_reg"
 
@@ -364,6 +393,7 @@ class DestinationParameterToken(ParameterToken):
 		self.shift_scale = (val >> 24) & 0xf
 		register_type_012 = (val >> 28) & 0x7
 		self.register_type = (register_type_34 << 3) + register_type_012
+		self.relative_param = None
 	def debug_print(self):
 		print "Dst: %d, %d, %d, %d, %d, %d" % (self.register, self.register_type, self.write_mask, self.is_relative, self.result_modifier, self.shift_scale)
 	def mod_str(self):
@@ -399,6 +429,7 @@ class SourceParameterToken(ParameterToken):
 		self.source_modifier = (val >> 24) & 0xf
 		register_type_012 = (val >> 28) & 0x7
 		self.register_type = (register_type_34 << 3) + register_type_012
+		self.relative_param = None
 	def debug_print(self):
 		print "Src: %d, %d, %d, %d, %d" % (self.register, self.register_type, self.read_mask, self.is_relative, self.source_modifier)
 	def mod_str(self, str):
@@ -449,9 +480,9 @@ class AbsInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -459,10 +490,10 @@ class AddInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -470,10 +501,10 @@ class BemInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -481,9 +512,9 @@ class BreakCInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.src0 = SourceParameterToken(data[0])
-		self.src1 = SourceParameterToken(data[1])
+		offset += 4
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(), self.src0.to_string(), self.src1.to_string())
 
@@ -491,8 +522,8 @@ class BreakPInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.src = SourceParameterToken(data[0])
+		offset += 4
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(), self.src.to_string())
 
@@ -500,8 +531,8 @@ class CallInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.src = SourceParameterToken(data[0])
+		offset += 4
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(), self.src.to_string())
 
@@ -509,9 +540,9 @@ class CallNzInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.src0 = SourceParameterToken(data[0])
-		self.src1 = SourceParameterToken(data[1])
+		offset += 4
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(), self.src0.to_string(), self.src1.to_string())
 
@@ -519,11 +550,11 @@ class CmpInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIII', stream[offset+4:offset+20])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string())
 
@@ -531,11 +562,11 @@ class CndInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIII', stream[offset+4:offset+20])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string())
 
@@ -543,10 +574,10 @@ class CrsInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -554,9 +585,9 @@ class DclInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		params = data[0]
-		self.dst = DestinationParameterToken(data[1])
+		params = struct.unpack('<I', stream[offset+4:offset+8])[0]
+		offset += 8
+		self.dst, offset = get_destination_param(stream, offset)
 		if self.dst.register_type == D3DSPR_INPUT or self.dst.register_type == D3DSPR_OUTPUT or self.dst.register_type == D3DSPR_TEXTURE:
 			self.usage = params & 0x1f
 			self.usage_index = (params >> 16) & 0xf
@@ -576,9 +607,9 @@ class DefInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		destValue = struct.unpack('<I', stream[offset+4:offset+8])[0]
-		self.dst = DestinationParameterToken(destValue)
-		self.values = struct.unpack('<ffff', stream[offset+8:offset+24])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.values = struct.unpack('<ffff', stream[offset:offset+16])
 	def to_string(self):
 		return "%s %s, %f, %f, %f, %f" % (self.mnemonic(self.dst), self.dst.to_string(), self.values[0], self.values[1], self.values[2], self.values[3])
 
@@ -586,9 +617,9 @@ class DefBInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		destValue = struct.unpack('<I', stream[offset+4:offset+8])[0]
-		self.dst = DestinationParameterToken(destValue)
-		self.value = struct.unpack('<I', stream[offset+8:offset+12])[0]
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.value = struct.unpack('<I', stream[offset:offset+4])[0]
 	def to_string(self):
 		return "%s %s %s" % (self.mnemonic(self.dst), self.dst.to_string(), "FALSE" if self.value == 0 else "TRUE")
 
@@ -596,9 +627,9 @@ class DefIInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		destValue = struct.unpack('<I', stream[offset+4:offset+8])[0]
-		self.dst = DestinationParameterToken(destValue)
-		self.values = struct.unpack('<iiii', stream[offset+8:offset+24])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.values = struct.unpack('<iiii', stream[offset:offset+16])
 	def to_string(self):
 		return "%s %s %d, %d, %d, %d" % (self.mnemonic(self.dst), self.dst.to_string(), self.values[0], self.values[1], self.values[2], self.values[3])
 
@@ -606,11 +637,11 @@ class Dp2AddInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIII', stream[offset+4:offset+20])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string())
 
@@ -618,10 +649,10 @@ class Dp3Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -629,10 +660,10 @@ class Dp4Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -640,10 +671,10 @@ class DstInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -651,9 +682,9 @@ class DsxInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -661,9 +692,9 @@ class DsyInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -671,9 +702,9 @@ class ExpInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -681,9 +712,9 @@ class ExppInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -691,9 +722,9 @@ class FrcInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -701,8 +732,8 @@ class IfInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.src = SourceParameterToken(data[0])
+		offset += 4
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(), self.src.to_string())
 
@@ -710,9 +741,9 @@ class IfCompInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.src0 = SourceParameterToken(data[0])
-		self.src1 = SourceParameterToken(data[1])
+		offset += 4
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(), self.src0.to_string(), self.src1.to_string())
 
@@ -720,8 +751,8 @@ class LabelInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.src = SourceParameterToken(data[0])
+		offset += 4
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(), self.src.to_string())
 
@@ -729,9 +760,9 @@ class LitInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -739,9 +770,9 @@ class LogInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -749,9 +780,9 @@ class LogPInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -759,9 +790,9 @@ class LoopInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.src0 = SourceParameterToken(data[0])
-		self.src1 = SourceParameterToken(data[1])
+		offset += 4
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(), self.src0.to_string(), self.src1.to_string())
 
@@ -769,11 +800,11 @@ class LrpInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIII', stream[offset+4:offset+20])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string())
 
@@ -781,10 +812,10 @@ class M3x2Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -792,10 +823,10 @@ class M3x3Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -803,10 +834,10 @@ class M3x4Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -814,10 +845,10 @@ class M4x3Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -825,10 +856,10 @@ class M4x4Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -836,11 +867,11 @@ class MadInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIII', stream[offset+4:offset+20])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string())
 
@@ -848,10 +879,10 @@ class MaxInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -859,10 +890,10 @@ class MinInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -870,9 +901,9 @@ class MovInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -880,9 +911,9 @@ class MovaInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -890,10 +921,10 @@ class MulInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset) # DestinationParameterToken(data[0])
+		self.src0, offset = get_source_param(stream, offset) # = SourceParameterToken(data[1])
+		self.src1, offset = get_source_param(stream, offset) # = SourceParameterToken(data[2])
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -901,9 +932,9 @@ class NrmInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -911,10 +942,10 @@ class PowInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -922,9 +953,9 @@ class RcpInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -932,8 +963,8 @@ class RepInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(), self.src.to_string())
 
@@ -941,9 +972,9 @@ class RsqInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -951,10 +982,10 @@ class SetpInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -962,10 +993,10 @@ class SgeInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -973,11 +1004,11 @@ class SgnInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIII', stream[offset+4:offset+20])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string())
 
@@ -985,9 +1016,9 @@ class SinCosInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -995,10 +1026,10 @@ class SltInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -1006,10 +1037,10 @@ class SubInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -1017,10 +1048,10 @@ class TexInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -1028,9 +1059,9 @@ class TexBemInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1038,9 +1069,9 @@ class TexBemlInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1048,8 +1079,8 @@ class TexCoordInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.dst = DestinationParameterToken(data[0])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(self.dst), self.dst.to_string())
 
@@ -1057,8 +1088,8 @@ class TexDepthInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.dst = DestinationParameterToken(data[0])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(self.dst), self.dst.to_string())
 
@@ -1066,9 +1097,9 @@ class TexDp3Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1076,9 +1107,9 @@ class TexDp3TexInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1086,8 +1117,8 @@ class TexKillInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<I', stream[offset+4:offset+8])
-		self.dst = DestinationParameterToken(data[0])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
 	def to_string(self):
 		return "%s %s" % (self.mnemonic(self.dst), self.dst.to_string())
 
@@ -1095,12 +1126,12 @@ class TexLddInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<IIIII', stream[offset+4:offset+24])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
-		self.src2 = SourceParameterToken(data[3])
-		self.src3 = SourceParameterToken(data[4])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
+		self.src2, offset = get_source_param(stream, offset)
+		self.src3, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string(), self.src2.to_string(), self.src3.to_string())
 
@@ -1108,10 +1139,10 @@ class TexLdlInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -1119,9 +1150,9 @@ class TexM3x2DepthInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1129,9 +1160,9 @@ class TexM3x2PadInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1139,9 +1170,9 @@ class TexM3x2TexInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1149,9 +1180,9 @@ class TexM3x3Instruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1159,9 +1190,9 @@ class TexM3x3PadInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1169,10 +1200,10 @@ class TexM3x3SpecInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<III', stream[offset+4:offset+16])
-		self.dst = DestinationParameterToken(data[0])
-		self.src0 = SourceParameterToken(data[1])
-		self.src1 = SourceParameterToken(data[2])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src0, offset = get_source_param(stream, offset)
+		self.src1, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src0.to_string(), self.src1.to_string())
 
@@ -1180,9 +1211,9 @@ class TexM3x3TexInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1190,9 +1221,9 @@ class TexM3x3VSpecInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1200,9 +1231,9 @@ class TexReg2ARInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1210,9 +1241,10 @@ class TexReg2GBInstruction(Instruction):
 	def __init__(self, token):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
-		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		#data = struct.unpack('<II', stream[offset+4:offset+12])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1221,8 +1253,9 @@ class TexReg2RGBInstruction(Instruction):
 		Instruction.__init__(self, token)
 	def load(self, stream, offset):
 		data = struct.unpack('<II', stream[offset+4:offset+12])
-		self.dst = DestinationParameterToken(data[0])
-		self.src = SourceParameterToken(data[1])
+		offset += 4
+		self.dst, offset = get_destination_param(stream, offset)
+		self.src, offset = get_source_param(stream, offset)
 	def to_string(self):
 		return "%s %s, %s" % (self.mnemonic(self.dst), self.dst.to_string(), self.src.to_string())
 
@@ -1233,6 +1266,22 @@ def get_instruction(stream, offset):
 	inst = instToken.create_instruction(stream, offset)
 	return inst
 
+def get_source_param(stream, offset):
+	tokenValue = struct.unpack('<I', stream[offset:offset+4])[0]
+	param = SourceParameterToken(tokenValue)
+	offset += 4
+	if param.is_relative:
+		param.relative_param, offset = get_source_param(stream, offset)
+	return param, offset
+
+def get_destination_param(stream, offset):
+	tokenValue = struct.unpack('<I', stream[offset:offset+4])[0]
+	param = DestinationParameterToken(tokenValue)
+	offset += 4
+	if param.is_relative:
+		param.relative_param, offset = get_destination_param(stream, offset)
+	return param, offset
+
 def get_version(stream):
 	val = struct.unpack('<I', stream[:4])[0]
 	if ((val >> 16) & 0xfffe) != 0xfffe:
@@ -1242,24 +1291,40 @@ def get_version(stream):
 	shaderType = (val >> 16) & 0xffff
 	return (shaderType, majorVersion, minorVersion)
 
-def disassemble(bytecode):
+def disassemble(bytecode, isDebug):
+	global gCurrentShaderType
 	shaderType, majorVersion, minorVersion = get_version(bytecode)
 	gCurrentShaderType = shaderType
 	print "%s_%d_%d" % (('vs' if (shaderType == SHADERTYPE_VERTEX) else 'ps'), majorVersion, minorVersion)
 	offset = 4
 	while offset < len(bytecode):
 		inst = get_instruction(bytecode, offset)
+		if isDebug:
+			print "; Offset 0x%X" % offset
 		print inst.to_string()
 		offset += inst.size()
 
+def print_usage():
+	print "Usage: dxshd.py [-d] <file>"
+	print "File should contain only DirectX shader bytecode"
+
 def main(argc, argv):
 	if (argc < 2):
-		print "Usage: dxshd.py <file>"
-		print "File should contain only DirectX shader bytecode"
+		print_usage()
 		return
-	shaderFile = open(argv[1], 'rb')
+	isDebug = False
+	fileName = ''
+	if (argv[1] == '-d'):
+		isDebug = True
+		if (argc < 3):
+			print_usage()
+			return
+		fileName = argv[2]
+	else:
+		fileName = argv[1]
+	shaderFile = open(fileName, 'rb')
 	shaderBytecode = shaderFile.read()
-	disassemble(shaderBytecode)
+	disassemble(shaderBytecode, isDebug)
 
 if __name__=="__main__":
 	main(len(sys.argv), sys.argv)
